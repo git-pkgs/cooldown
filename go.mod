@@ -1,3 +1,3 @@
 module github.com/git-pkgs/cooldown
 
-go 1.26.3
+go 1.25
