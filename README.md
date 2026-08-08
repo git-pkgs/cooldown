@@ -2,7 +2,7 @@
 
 A small, ecosystem-agnostic version-age filter for package-manager tools. Hides versions published too recently so the community has time to spot malicious releases before they're pulled into projects.
 
-Cross-ecosystem by construction: the same `Config` shape covers npm, PyPI, Cargo, RubyGems, Composer, Conda, Hex, NuGet, Pub, and any future ecosystem. Resolution order is package-PURL > ecosystem-name > global default, so a single config can express a strict default with targeted opt-outs.
+Cross-ecosystem by construction: the same `Config` shape covers npm, PyPI, Cargo, RubyGems, Composer, Conda, Hex, NuGet, Pub, and any future ecosystem. Resolution order is package-PURL > package-PURL pattern > ecosystem-name > global default, so a single config can express a strict default with targeted opt-outs.
 
 ## Install
 
@@ -19,6 +19,9 @@ cfg := &cooldown.Config{
     Packages:   map[string]string{                  // per-PURL override
         "pkg:npm/htmx.org": "0",                    // 0 = disabled
     },
+    PackagePatterns: map[string]string{             // per-PURL glob override
+        "pkg:npm/@example/*": "0",
+    },
 }
 
 if cfg.IsAllowed("npm", "pkg:npm/lodash", publishedAt) {
@@ -27,6 +30,12 @@ if cfg.IsAllowed("npm", "pkg:npm/lodash", publishedAt) {
 ```
 
 `Config.For(ecosystem, purl)` returns the effective duration; useful when surfacing the policy to a UI. `Config.Enabled()` reports whether any cooldown is configured (cheap check before walking a large version set).
+
+`PackagePatterns` uses Go path globs against versionless PURLs. For example,
+`pkg:npm/@example/*` matches an npm scope. Exact `Packages` entries take
+precedence over patterns. When multiple patterns match, the most specific
+pattern wins; ties use lexical order. Scoped npm patterns accept `@` and match
+canonical PURLs used by registry integrations.
 
 Duration strings accept Go's standard formats (`48h`, `30m`, `1h30m`) plus a `d` suffix for days (`3d`). `0` disables the window.
 

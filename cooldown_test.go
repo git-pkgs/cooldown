@@ -119,6 +119,7 @@ func TestConfigEnabled(t *testing.T) {
 		{"default only", Config{Default: "3d"}, true},
 		{"ecosystem only", Config{Ecosystems: map[string]string{"npm": "7d"}}, true},
 		{"package only", Config{Packages: map[string]string{"pkg:npm/x": "1d"}}, true},
+		{"package pattern only", Config{PackagePatterns: map[string]string{"pkg:npm/@example/*": "1d"}}, true},
 		{"all zero", Config{Default: "0", Ecosystems: map[string]string{"npm": "0"}}, false},
 	}
 
@@ -129,5 +130,32 @@ func TestConfigEnabled(t *testing.T) {
 				t.Errorf("Enabled() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConfigPackagePatterns(t *testing.T) {
+	now := time.Now()
+	cfg := Config{
+		Default: "7d",
+		PackagePatterns: map[string]string{
+			"pkg:npm/@example/*":        "0",
+			"pkg:npm/@example/critical": "2d",
+		},
+		Packages: map[string]string{
+			"pkg:npm/@example/critical": "4d",
+		},
+	}
+
+	if got := cfg.For("npm", "pkg:npm/@example/widget"); got != 0 {
+		t.Errorf("scoped pattern duration = %v, want 0", got)
+	}
+	if got := cfg.For("npm", "pkg:npm/@example/critical"); got != 4*24*time.Hour {
+		t.Errorf("exact package duration = %v, want 4d", got)
+	}
+	if !cfg.IsAllowed("npm", "pkg:npm/@example/widget", now) {
+		t.Fatal("matching package pattern should disable cooldown")
+	}
+	if cfg.IsAllowed("npm", "pkg:npm/public-package", now) {
+		t.Fatal("non-matching package should use default cooldown")
 	}
 }

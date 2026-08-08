@@ -2,6 +2,8 @@ package cooldown
 
 import (
 	"fmt"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +26,20 @@ type Config struct {
 	// Keys are PURLs (e.g., "pkg:npm/lodash", "pkg:npm/@babel/core").
 	Packages map[string]string `json:"packages" yaml:"packages"`
 
+	// PackagePatterns overrides the cooldown for packages whose PURLs match a glob.
+	// Exact package overrides take precedence over matching patterns.
+	PackagePatterns map[string]string `json:"package_patterns" yaml:"package_patterns"`
+
 	defaultDuration    time.Duration
 	ecosystemDurations map[string]time.Duration
 	packageDurations   map[string]time.Duration
+	packagePatterns    []packagePattern
 	parsed             bool
+}
+
+type packagePattern struct {
+	glob     string
+	duration time.Duration
 }
 
 // parse resolves all string durations into time.Duration values.
@@ -51,20 +63,59 @@ func (c *Config) parse() {
 		d, _ := ParseDuration(v)
 		c.packageDurations[k] = d
 	}
+
+	c.packagePatterns = make([]packagePattern, 0, len(c.PackagePatterns))
+	for glob, value := range c.PackagePatterns {
+		if _, err := path.Match(glob, ""); err != nil {
+			continue
+		}
+		duration, err := ParseDuration(value)
+		if err != nil {
+			continue
+		}
+		c.packagePatterns = append(c.packagePatterns, packagePattern{glob: glob, duration: duration})
+	}
+	sort.Slice(c.packagePatterns, func(i, j int) bool {
+		left, right := literalLength(c.packagePatterns[i].glob), literalLength(c.packagePatterns[j].glob)
+		if left != right {
+			return left > right
+		}
+		return c.packagePatterns[i].glob < c.packagePatterns[j].glob
+	})
+}
+
+func literalLength(glob string) int {
+	return len(glob) - strings.Count(glob, "*") - strings.Count(glob, "?")
 }
 
 // For returns the effective cooldown duration for a given ecosystem and package PURL.
-// Resolution order: package override > ecosystem override > global default.
+// Resolution order: package override > package pattern > ecosystem override >
+// global default.
 func (c *Config) For(ecosystem, packagePURL string) time.Duration {
 	c.parse()
 
 	if d, ok := c.packageDurations[packagePURL]; ok {
 		return d
 	}
+	for _, candidate := range c.packagePatterns {
+		if matchesPattern(candidate.glob, packagePURL) {
+			return candidate.duration
+		}
+	}
 	if d, ok := c.ecosystemDurations[ecosystem]; ok {
 		return d
 	}
 	return c.defaultDuration
+}
+
+func matchesPattern(glob, packagePURL string) bool {
+	matched, _ := path.Match(glob, packagePURL)
+	if matched {
+		return true
+	}
+	decoded := strings.ReplaceAll(packagePURL, "%40", "@")
+	matched, _ = path.Match(glob, decoded)
+	return matched
 }
 
 // IsAllowed returns true if a version with the given publish time has passed
@@ -93,6 +144,11 @@ func (c *Config) Enabled() bool {
 	}
 	for _, d := range c.packageDurations {
 		if d > 0 {
+			return true
+		}
+	}
+	for _, candidate := range c.packagePatterns {
+		if candidate.duration > 0 {
 			return true
 		}
 	}
