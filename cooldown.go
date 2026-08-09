@@ -85,7 +85,38 @@ func (c *Config) parse() {
 }
 
 func literalLength(glob string) int {
-	return len(glob) - strings.Count(glob, "*") - strings.Count(glob, "?")
+	// Count bytes that must match literally. This is used only for ordering patterns
+	// when multiple patterns match.
+	lit := 0
+	inClass := false
+	escaped := false
+	for i := 0; i < len(glob); i++ {
+		c := glob[i]
+		if escaped {
+			lit++
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			continue
+		}
+		if inClass {
+			if c == ']' {
+				inClass = false
+			}
+			continue
+		}
+		switch c {
+		case '*', '?':
+			// wildcard
+		case '[':
+			inClass = true
+		default:
+			lit++
+		}
+	}
+	return lit
 }
 
 // For returns the effective cooldown duration for a given ecosystem and package PURL.
