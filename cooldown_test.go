@@ -109,6 +109,84 @@ func TestConfigIsAllowed(t *testing.T) {
 	}
 }
 
+func TestConfigEvaluate(t *testing.T) {
+	evaluatedAt := time.Date(2000, time.January, 15, 12, 0, 0, 0, time.UTC)
+	c := &Config{
+		Default: "3d",
+		Packages: map[string]string{
+			"pkg:npm/lodash": "0",
+		},
+	}
+
+	tests := []struct {
+		name        string
+		packagePURL string
+		publishedAt time.Time
+		want        Decision
+	}{
+		{
+			name:        "disabled",
+			packagePURL: "pkg:npm/lodash",
+			publishedAt: evaluatedAt.Add(-time.Minute),
+			want: Decision{
+				Allowed:     true,
+				AvailableAt: evaluatedAt.Add(-time.Minute),
+				Reason:      ReasonDisabled,
+			},
+		},
+		{
+			name:        "unknown publication time",
+			packagePURL: "pkg:npm/express",
+			want: Decision{
+				Allowed:  true,
+				Cooldown: 3 * 24 * time.Hour,
+				Reason:   ReasonUnknownPublicationTime,
+			},
+		},
+		{
+			name:        "elapsed",
+			packagePURL: "pkg:npm/express",
+			publishedAt: evaluatedAt.Add(-4 * 24 * time.Hour),
+			want: Decision{
+				Allowed:     true,
+				Cooldown:    3 * 24 * time.Hour,
+				AvailableAt: evaluatedAt.Add(-24 * time.Hour),
+				Reason:      ReasonElapsed,
+			},
+		},
+		{
+			name:        "waiting",
+			packagePURL: "pkg:npm/express",
+			publishedAt: evaluatedAt.Add(-24 * time.Hour),
+			want: Decision{
+				Cooldown:    3 * 24 * time.Hour,
+				AvailableAt: evaluatedAt.Add(2 * 24 * time.Hour),
+				Reason:      ReasonWaiting,
+			},
+		},
+		{
+			name:        "exactly at boundary",
+			packagePURL: "pkg:npm/express",
+			publishedAt: evaluatedAt.Add(-3 * 24 * time.Hour),
+			want: Decision{
+				Allowed:     true,
+				Cooldown:    3 * 24 * time.Hour,
+				AvailableAt: evaluatedAt,
+				Reason:      ReasonElapsed,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := c.Evaluate("npm", tt.packagePURL, tt.publishedAt, evaluatedAt)
+			if got != tt.want {
+				t.Errorf("Evaluate() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfigEnabled(t *testing.T) {
 	tests := []struct {
 		name string
