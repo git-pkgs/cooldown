@@ -135,6 +135,14 @@ func TestConfigEvaluate(t *testing.T) {
 			},
 		},
 		{
+			name:        "disabled with unknown publication time",
+			packagePURL: "pkg:npm/lodash",
+			want: Decision{
+				Allowed: true,
+				Reason:  ReasonUnknownPublicationTime,
+			},
+		},
+		{
 			name:        "unknown publication time",
 			packagePURL: "pkg:npm/express",
 			want: Decision{

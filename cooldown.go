@@ -110,14 +110,14 @@ func (c *Config) Evaluate(ecosystem, packagePURL string, publishedAt, evaluatedA
 		decision.AvailableAt = publishedAt.Add(cooldown)
 	}
 
-	if cooldown == 0 {
-		decision.Allowed = true
-		decision.Reason = ReasonDisabled
-		return decision
-	}
 	if publishedAt.IsZero() {
 		decision.Allowed = true
 		decision.Reason = ReasonUnknownPublicationTime
+		return decision
+	}
+	if cooldown == 0 {
+		decision.Allowed = true
+		decision.Reason = ReasonDisabled
 		return decision
 	}
 	if !evaluatedAt.Before(decision.AvailableAt) {
