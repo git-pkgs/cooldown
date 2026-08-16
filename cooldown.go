@@ -9,6 +9,29 @@ import (
 
 const hoursPerDay = 24
 
+// Reason explains why a package version is allowed or blocked.
+type Reason string
+
+const (
+	// ReasonDisabled means the selected cooldown duration is zero.
+	ReasonDisabled Reason = "disabled"
+	// ReasonElapsed means the package version has passed its cooldown period.
+	ReasonElapsed Reason = "elapsed"
+	// ReasonWaiting means the package version is still in its cooldown period.
+	ReasonWaiting Reason = "waiting"
+	// ReasonUnknownPublicationTime means the package version has no publication
+	// time and is allowed by the default permissive policy.
+	ReasonUnknownPublicationTime Reason = "unknown-publication-time"
+)
+
+// Decision describes the result of evaluating a package version.
+type Decision struct {
+	Allowed     bool
+	Cooldown    time.Duration
+	AvailableAt time.Time
+	Reason      Reason
+}
+
 // Config holds cooldown settings for version filtering.
 // Cooldown hides package versions published too recently, giving the community
 // time to spot malicious releases before they're pulled into projects.
@@ -70,14 +93,41 @@ func (c *Config) For(ecosystem, packagePURL string) time.Duration {
 // IsAllowed returns true if a version with the given publish time has passed
 // the cooldown period for this ecosystem/package.
 func (c *Config) IsAllowed(ecosystem, packagePURL string, publishedAt time.Time) bool {
-	d := c.For(ecosystem, packagePURL)
-	if d == 0 {
-		return true
+	return c.Evaluate(ecosystem, packagePURL, publishedAt, time.Now()).Allowed
+}
+
+// Evaluate returns the cooldown decision for a version at evaluatedAt.
+// AvailableAt is zero when the publication time is unknown. Otherwise, it is
+// the publication time plus the selected cooldown, including when the cooldown
+// is disabled.
+func (c *Config) Evaluate(ecosystem, packagePURL string, publishedAt, evaluatedAt time.Time) Decision {
+	cooldown := c.For(ecosystem, packagePURL)
+	decision := Decision{
+		Cooldown: cooldown,
 	}
+
+	if !publishedAt.IsZero() {
+		decision.AvailableAt = publishedAt.Add(cooldown)
+	}
+
 	if publishedAt.IsZero() {
-		return true
+		decision.Allowed = true
+		decision.Reason = ReasonUnknownPublicationTime
+		return decision
 	}
-	return time.Since(publishedAt) >= d
+	if cooldown == 0 {
+		decision.Allowed = true
+		decision.Reason = ReasonDisabled
+		return decision
+	}
+	if !evaluatedAt.Before(decision.AvailableAt) {
+		decision.Allowed = true
+		decision.Reason = ReasonElapsed
+		return decision
+	}
+
+	decision.Reason = ReasonWaiting
+	return decision
 }
 
 // Enabled returns true if any cooldown is configured.

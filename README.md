@@ -24,9 +24,14 @@ cfg := &cooldown.Config{
 if cfg.IsAllowed("npm", "pkg:npm/lodash", publishedAt) {
     // version cleared the window; use it
 }
+
+decision := cfg.Evaluate("npm", "pkg:npm/lodash", publishedAt, evaluatedAt)
+if !decision.Allowed {
+    fmt.Printf("available at %s (%s)\n", decision.AvailableAt, decision.Reason)
+}
 ```
 
-`Config.For(ecosystem, purl)` returns the effective duration; useful when surfacing the policy to a UI. `Config.Enabled()` reports whether any cooldown is configured (cheap check before walking a large version set).
+`Config.Evaluate` accepts an explicit evaluation time and returns the selected cooldown, availability time, and a typed reason. Versions without a publication time remain allowed and return `ReasonUnknownPublicationTime`. `Config.IsAllowed` is the current-time shorthand. `Config.For(ecosystem, purl)` returns the effective duration; useful when surfacing the policy to a UI. `Config.Enabled()` reports whether any cooldown is configured (cheap check before walking a large version set).
 
 Duration strings accept Go's standard formats (`48h`, `30m`, `1h30m`) plus a `d` suffix for days (`3d`). `0` disables the window.
 
