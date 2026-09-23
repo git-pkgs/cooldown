@@ -41,4 +41,4 @@ Originally lived inside an HTTP proxy that filtered registry responses; spotted 
 
 ## License
 
-MIT
+[MIT](LICENSE).
