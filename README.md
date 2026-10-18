@@ -35,6 +35,23 @@ if !decision.Allowed {
 
 Duration strings accept Go's standard formats (`48h`, `30m`, `1h30m`) plus a `d` suffix for days (`3d`). `0` disables the window.
 
+For package-pattern overrides, construct a `Policy` before serving requests:
+
+```go
+policy, err := cooldown.NewPolicy(cfg, map[string]string{
+    "pkg:npm/@example/*": "0",
+    "pkg:nuget/example.*": "7d",
+})
+if err != nil {
+    return err
+}
+decision := policy.Evaluate("npm", "pkg:npm/%40example/widget", publishedAt, evaluatedAt)
+```
+
+`Policy` provides the same `For`, `Evaluate`, `IsAllowed`, and `Enabled` methods as `Config`. Exact package overrides take precedence over patterns, followed by ecosystem overrides and the global default. The matching pattern with the most literal characters wins, with lexical order breaking ties. `*` and `?` do not match `/`; character classes and escapes are rejected.
+
+Patterns accept either `@` or `%40` for npm scopes. Exact keys and lookup PURLs must already use the same canonical encoding. The constructor rejects invalid pattern durations and conflicting normalized patterns; equivalent durations such as `1d` and `24h` are accepted. A nil base config supplies a zero default. Construct the policy once and leave the base config unchanged while using it concurrently.
+
 ## Why standalone
 
 Originally lived inside an HTTP proxy that filtered registry responses; spotted as a reusable shape and lifted out. The same predicate is useful for package-manager CLIs, dependency-update bots, security scanners, and anything else that walks a version set with an age constraint.
