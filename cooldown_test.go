@@ -1,6 +1,7 @@
 package cooldown
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
@@ -198,14 +199,14 @@ func TestConfigEvaluate(t *testing.T) {
 func TestConfigEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  Config
+		cfg  *Config
 		want bool
 	}{
-		{"empty config", Config{}, false},
-		{"default only", Config{Default: "3d"}, true},
-		{"ecosystem only", Config{Ecosystems: map[string]string{"npm": "7d"}}, true},
-		{"package only", Config{Packages: map[string]string{"pkg:npm/x": "1d"}}, true},
-		{"all zero", Config{Default: "0", Ecosystems: map[string]string{"npm": "0"}}, false},
+		{"empty config", &Config{}, false},
+		{"default only", &Config{Default: "3d"}, true},
+		{"ecosystem only", &Config{Ecosystems: map[string]string{"npm": "7d"}}, true},
+		{"package only", &Config{Packages: map[string]string{"pkg:npm/x": "1d"}}, true},
+		{"all zero", &Config{Default: "0", Ecosystems: map[string]string{"npm": "0"}}, false},
 	}
 
 	for _, tt := range tests {
@@ -215,5 +216,34 @@ func TestConfigEnabled(t *testing.T) {
 				t.Errorf("Enabled() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConfigConcurrentFirstUse(t *testing.T) {
+	for range 50 {
+		c := &Config{
+			Default:    "3d",
+			Ecosystems: map[string]string{"npm": "7d"},
+			Packages:   map[string]string{"pkg:npm/lodash": "1d"},
+		}
+		const n = 8
+		got := make([]time.Duration, n)
+		var start, wg sync.WaitGroup
+		start.Add(1)
+		for i := range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				start.Wait()
+				got[i] = c.For("npm", "pkg:npm/express")
+			}()
+		}
+		start.Done()
+		wg.Wait()
+		for i, d := range got {
+			if d != 7*24*time.Hour {
+				t.Fatalf("goroutine %d: For = %v, want 168h", i, d)
+			}
+		}
 	}
 }

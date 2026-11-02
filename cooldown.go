@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -50,17 +51,16 @@ type Config struct {
 	defaultDuration    time.Duration
 	ecosystemDurations map[string]time.Duration
 	packageDurations   map[string]time.Duration
-	parsed             bool
+	parseOnce          sync.Once
 }
 
 // parse resolves all string durations into time.Duration values.
-// Called lazily on first use.
+// Called lazily on first use, once even when the first calls are concurrent.
 func (c *Config) parse() {
-	if c.parsed {
-		return
-	}
-	c.parsed = true
+	c.parseOnce.Do(c.parseDurations)
+}
 
+func (c *Config) parseDurations() {
 	c.defaultDuration, _ = ParseDuration(c.Default)
 
 	c.ecosystemDurations = make(map[string]time.Duration, len(c.Ecosystems))
